@@ -143,7 +143,7 @@ func validarSesion(token string) (bool, string) {
 		timestampCreacion := registro[2]
 		estado := registro[4]
 
-		// Buscar el token.
+		// Buscar el token
 		if tokenCSV != token {
 			continue
 		}
@@ -153,13 +153,13 @@ func validarSesion(token string) (bool, string) {
 		fmt.Println("Estado:", estado)
 		fmt.Println("Creacion:", timestampCreacion)
 
-		// Comprobar estado.
+		// Comprobar estado
 		if estado != "ACTIVO" {
 			fmt.Println("Sesion no esta ACTIVA")
 			return false, ""
 		}
 
-		// Convertir timestamp.
+		// Convertir timestamp
 		tiempoCreacion, err := time.ParseInLocation(
 			"2006-01-02 15:04:05",
 			timestampCreacion,
@@ -171,12 +171,12 @@ func validarSesion(token string) (bool, string) {
 			return false, ""
 		}
 
-		// Calcular antiguedad.
+		// Calcular antiguedad
 		antiguedad := time.Since(tiempoCreacion)
 
 		fmt.Println("Antiguedad de la sesion:", antiguedad)
 
-		// TTL de 10 minutos.
+		// TTL de 10 minutos
 		if antiguedad > 10*time.Minute {
 
 			fmt.Println("Sesion expirada por TTL")
@@ -260,17 +260,11 @@ func invalidarSesion(token string) error {
 }
 
 func manejarCliente(conexion net.Conn) {
-
 	defer conexion.Close()
-
 	fmt.Println("Cliente TCP conectado")
-
 	lector := bufio.NewReader(conexion)
 
-	// ==========================
 	// LOGIN
-	// ==========================
-
 	linea, err := lector.ReadString('\n')
 
 	if err != nil {
@@ -279,9 +273,7 @@ func manejarCliente(conexion net.Conn) {
 	}
 
 	linea = strings.TrimSpace(linea)
-
 	fmt.Println("Mensaje recibido:", linea)
-
 	partes := strings.SplitN(linea, " ", 3)
 
 	if len(partes) != 3 || partes[0] != "LOGIN" {
@@ -294,7 +286,6 @@ func manejarCliente(conexion net.Conn) {
 	password := partes[2]
 
 	if !verificarCredenciales(username, password) {
-
 		fmt.Fprintln(conexion, "ERROR INVALID CREDENTIALS")
 		return
 	}
@@ -302,7 +293,6 @@ func manejarCliente(conexion net.Conn) {
 	token, err := generarToken()
 
 	if err != nil {
-
 		fmt.Println("Error al generar token:", err)
 		fmt.Fprintln(conexion, "ERROR INTERNAL SERVER")
 		return
@@ -311,7 +301,6 @@ func manejarCliente(conexion net.Conn) {
 	err = guardarSesion(token, username)
 
 	if err != nil {
-
 		fmt.Println("Error al guardar sesión:", err)
 		fmt.Fprintln(conexion, "ERROR INTERNAL SERVER")
 		return
@@ -324,9 +313,7 @@ func manejarCliente(conexion net.Conn) {
 	}
 
 	mutexClientes.Lock()
-
 	clientesActivos[token] = cliente
-
 	mutexClientes.Unlock()
 
 	fmt.Println("Usuario autenticado:", username)
@@ -340,16 +327,11 @@ func manejarCliente(conexion net.Conn) {
 		puertoUDP,
 	)
 
-	// ==========================
 	// CONEXIÓN PERMANENTE
-	// ==========================
-
 	for {
-
 		linea, err = lector.ReadString('\n')
 
 		if err != nil {
-
 			fmt.Println(
 				"Cliente desconectado:",
 				username,
@@ -371,15 +353,10 @@ func manejarCliente(conexion net.Conn) {
 			linea,
 		)
 
-		// Por ahora solo mostramos el mensaje.
-		// MSG y LOGOUT los implementaremos después.
-
 		if linea == "LOGOUT" {
-
 			err := invalidarSesion(token)
 
 			if err != nil {
-
 				fmt.Println(
 					"Error al invalidar sesion:",
 					err,
@@ -413,14 +390,11 @@ func manejarCliente(conexion net.Conn) {
 		partes = strings.SplitN(linea, " ", 3)
 
 		if len(partes) == 3 && partes[0] == "MSG" {
-
 			tokenMensaje := partes[1]
 			contenido := partes[2]
 
-			// Validar que el token utilizado
-			// pertenece a la sesión actual.
+			// Validar token
 			if tokenMensaje != token {
-
 				fmt.Fprintln(
 					conexion,
 					"ERROR INVALID TOKEN",
@@ -429,12 +403,10 @@ func manejarCliente(conexion net.Conn) {
 				continue
 			}
 
-			// Validar la sesión directamente
-			// contra sesiones.csv.
+			// Validar sesión
 			sesionValida, usuarioSesion := validarSesion(tokenMensaje)
 
 			if !sesionValida {
-
 				fmt.Fprintln(
 					conexion,
 					"ERROR SESSION EXPIRED",
@@ -443,10 +415,8 @@ func manejarCliente(conexion net.Conn) {
 				continue
 			}
 
-			// Comprobar que el usuario asociado
-			// al token sea el usuario de esta conexión.
+			// Validar usuario-token
 			if usuarioSesion != username {
-
 				fmt.Fprintln(
 					conexion,
 					"ERROR INVALID TOKEN",
@@ -462,7 +432,6 @@ func manejarCliente(conexion net.Conn) {
 			)
 
 			if err != nil {
-
 				fmt.Println(
 					"Error al guardar mensaje:",
 					err,
@@ -483,13 +452,13 @@ func manejarCliente(conexion net.Conn) {
 				contenido,
 			)
 
-			// ACK al remitente.
+			// ACK al remitente
 			fmt.Fprintln(
 				conexion,
 				"ACK",
 			)
 
-			// Mensaje para los demás clientes.
+			// Mensaje para los demás clientes
 			broadcast := fmt.Sprintf(
 				"INCOMING %s %s\n",
 				username,
@@ -501,7 +470,7 @@ func manejarCliente(conexion net.Conn) {
 			for tokenCliente, cliente := range clientesActivos {
 
 				// No enviar el mensaje
-				// nuevamente al remitente.
+				// nuevamente al remitente
 				if tokenCliente == token {
 					continue
 				}
@@ -531,7 +500,7 @@ func manejarCliente(conexion net.Conn) {
 func guardarMensaje(username string, mensaje string) error {
 
 	archivo, err := os.OpenFile(
-		"historial.csv",
+		archivoHistorial,
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
 		0644,
 	)

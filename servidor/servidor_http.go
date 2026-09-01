@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-const archivoUsuarios = "usuarios.csv"
-
 func usuarioExiste(username string) bool {
 
 	archivo, err := os.Open(archivoUsuarios)
@@ -140,16 +138,19 @@ func historyHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(archivo)
 }
 
-func main() {
+func iniciarServidorHTTP() {
 
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/history", historyHandler)
 
-	fmt.Println("Servidor HTTP escuchando en 127.0.0.1:8080")
+	go func() {
 
-	err := http.ListenAndServe("127.0.0.1:8080", nil)
+		fmt.Println("Servidor HTTP escuchando en 127.0.0.1:8080")
 
-	if err != nil {
-		fmt.Println("Error:", err)
-	}
+		err := http.ListenAndServe("127.0.0.1:8080", nil)
+
+		if err != nil {
+			fmt.Println("Error HTTP:", err)
+		}
+	}()
 }

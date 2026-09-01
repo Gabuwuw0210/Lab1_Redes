@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-const archivoSesiones = "sesiones.csv"
-
 func actualizarHeartbeat(token string) bool {
 
 	archivo, err := os.Open(archivoSesiones)
@@ -81,57 +79,66 @@ func actualizarHeartbeat(token string) bool {
 	return true
 }
 
-func main() {
+func iniciarServidorUDP() {
 
-	direccion := net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: 9001,
-	}
+	go func() {
 
-	servidor, err := net.ListenUDP("udp", &direccion)
+		direccion := net.UDPAddr{
+			IP:   net.ParseIP("127.0.0.1"),
+			Port: 9001,
+		}
 
-	if err != nil {
-		fmt.Println("Error al iniciar servidor UDP:", err)
-		return
-	}
-
-	defer servidor.Close()
-
-	fmt.Println("Servidor UDP escuchando en 127.0.0.1:9001")
-
-	buffer := make([]byte, 1024)
-
-	for {
-
-		n, direccionCliente, err := servidor.ReadFromUDP(buffer)
+		servidor, err := net.ListenUDP("udp", &direccion)
 
 		if err != nil {
-			fmt.Println("Error al recibir UDP:", err)
-			continue
+			fmt.Println("Error al iniciar servidor UDP:", err)
+			return
 		}
 
-		mensaje := strings.TrimSpace(string(buffer[:n]))
+		defer servidor.Close()
 
-		fmt.Println(
-			"Mensaje UDP recibido desde",
-			direccionCliente,
-			":",
-			mensaje,
-		)
+		fmt.Println("Servidor UDP escuchando en 127.0.0.1:9001")
 
-		partes := strings.SplitN(mensaje, " ", 2)
+		buffer := make([]byte, 1024)
 
-		if len(partes) != 2 || partes[0] != "HEARTBEAT" {
-			fmt.Println("Heartbeat invalido")
-			continue
+		for {
+
+			n, direccionCliente, err := servidor.ReadFromUDP(buffer)
+
+			if err != nil {
+				fmt.Println("Error al recibir UDP:", err)
+				continue
+			}
+
+			mensaje := strings.TrimSpace(string(buffer[:n]))
+
+			fmt.Println(
+				"Mensaje UDP recibido desde",
+				direccionCliente,
+				":",
+				mensaje,
+			)
+
+			partes := strings.SplitN(mensaje, " ", 2)
+
+			if len(partes) != 2 || partes[0] != "HEARTBEAT" {
+				fmt.Println("Heartbeat invalido")
+				continue
+			}
+
+			token := partes[1]
+
+			if actualizarHeartbeat(token) {
+				fmt.Println(
+					"Heartbeat valido. Sesion actualizada:",
+					token,
+				)
+			} else {
+				fmt.Println(
+					"Heartbeat rechazado. Token invalido o sesion inactiva:",
+					token,
+				)
+			}
 		}
-
-		token := partes[1]
-
-		if actualizarHeartbeat(token) {
-			fmt.Println("Heartbeat valido. Sesion actualizada:", token)
-		} else {
-			fmt.Println("Heartbeat rechazado. Token invalido o sesion inactiva:", token)
-		}
-	}
+	}()
 }

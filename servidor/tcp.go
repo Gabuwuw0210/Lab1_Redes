@@ -13,8 +13,6 @@ import (
 	"time"
 )
 
-const archivoUsuarios = "usuarios.csv"
-const archivoSesiones = "sesiones.csv"
 const puertoUDP = 9001
 
 type Cliente struct {
@@ -561,43 +559,46 @@ func guardarMensaje(username string, mensaje string) error {
 	return err
 }
 
-func main() {
+func iniciarServidorTCP() {
 
-	servidor, err := net.Listen(
-		"tcp",
-		"127.0.0.1:9000",
-	)
+	go func() {
 
-	if err != nil {
-
-		fmt.Println(
-			"Error al iniciar servidor:",
-			err,
+		servidor, err := net.Listen(
+			"tcp",
+			"127.0.0.1:9000",
 		)
-
-		return
-	}
-
-	defer servidor.Close()
-
-	fmt.Println(
-		"Servidor TCP escuchando en 127.0.0.1:9000",
-	)
-
-	for {
-
-		conexion, err := servidor.Accept()
 
 		if err != nil {
 
 			fmt.Println(
-				"Error al aceptar conexión:",
+				"Error al iniciar servidor TCP:",
 				err,
 			)
 
-			continue
+			return
 		}
 
-		go manejarCliente(conexion)
-	}
+		defer servidor.Close()
+
+		fmt.Println(
+			"Servidor TCP escuchando en 127.0.0.1:9000",
+		)
+
+		for {
+
+			conexion, err := servidor.Accept()
+
+			if err != nil {
+
+				fmt.Println(
+					"Error al aceptar conexión:",
+					err,
+				)
+
+				continue
+			}
+
+			go manejarCliente(conexion)
+		}
+	}()
 }

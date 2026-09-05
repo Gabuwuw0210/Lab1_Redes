@@ -14,3 +14,6 @@ este readme es para nosotros, para levantar el programa, primero asegura tener p
 - si quieres mandar un heartbeat al servidor, utliza `cliente_udp.py` escribiendo `python cliente_udp.py` (esto actualiza el valor de `timestamp_ultimo_heartbeat` en `sesiones.csv`)
 
 falta hacer el componente 3 y 4
+
+---------------------------
+Para hacer el componente 4 junté los clientes que ya estaban hechos en cliente.py, para hacer más simple lo de los hilos. Para correr el servidor es lo mismo de antes, se hace el go mod init y el run. Para los clientes es con `python3 cliente.py`, y si tienes dos terminales clientes se pueden comunicar entre ellas.

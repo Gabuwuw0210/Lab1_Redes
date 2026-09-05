@@ -35,6 +35,7 @@ func main() {
 	iniciarServidorHTTP()
 	iniciarServidorTCP()
 	iniciarServidorUDP()
+	iniciarWatchdog()
 
 	select {}
 }

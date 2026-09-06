@@ -19,33 +19,30 @@ type Cliente struct {
 	conexion net.Conn
 	username string
 	token    string
+	mutex    sync.Mutex
 }
 
 var clientesActivos = make(map[string]*Cliente)
 var mutexClientes sync.Mutex
+var mutexArchivos sync.Mutex
 
 func verificarCredenciales(username string, password string) bool {
+	mutexArchivos.Lock()
+	defer mutexArchivos.Unlock()
 
 	archivo, err := os.Open(archivoUsuarios)
-
 	if err != nil {
-		fmt.Println("Error al abrir usuarios.csv:", err)
 		return false
 	}
-
 	defer archivo.Close()
 
 	lector := csv.NewReader(archivo)
-
 	registros, err := lector.ReadAll()
-
 	if err != nil {
-		fmt.Println("Error al leer usuarios.csv:", err)
 		return false
 	}
 
 	for i, registro := range registros {
-
 		if i == 0 {
 			continue
 		}
@@ -63,11 +60,9 @@ func verificarCredenciales(username string, password string) bool {
 }
 
 func generarToken() (string, error) {
-
 	bytes := make([]byte, 18)
 
 	_, err := rand.Read(bytes)
-
 	if err != nil {
 		return "", err
 	}
@@ -76,17 +71,17 @@ func generarToken() (string, error) {
 }
 
 func guardarSesion(token string, username string) error {
+	mutexArchivos.Lock()
+	defer mutexArchivos.Unlock()
 
 	archivo, err := os.OpenFile(
 		archivoSesiones,
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
 		0644,
 	)
-
 	if err != nil {
 		return err
 	}
-
 	defer archivo.Close()
 
 	escritor := csv.NewWriter(archivo)
@@ -101,35 +96,33 @@ func guardarSesion(token string, username string) error {
 		"ACTIVO",
 	}
 
-	err = escritor.Write(registro)
+	if err := escritor.Write(registro); err != nil {
+		return err
+	}
 
 	escritor.Flush()
 
-	return err
+	return escritor.Error()
 }
 
 func validarSesion(token string) (bool, string) {
+	mutexArchivos.Lock()
+	defer mutexArchivos.Unlock()
 
 	archivo, err := os.Open(archivoSesiones)
-
 	if err != nil {
-		fmt.Println("Error al abrir sesiones.csv:", err)
 		return false, ""
 	}
-
 	defer archivo.Close()
 
 	lector := csv.NewReader(archivo)
 
 	registros, err := lector.ReadAll()
-
 	if err != nil {
-		fmt.Println("Error al leer sesiones.csv:", err)
 		return false, ""
 	}
 
 	for i, registro := range registros {
-
 		if i == 0 {
 			continue
 		}
@@ -138,75 +131,47 @@ func validarSesion(token string) (bool, string) {
 			continue
 		}
 
-		tokenCSV := registro[0]
-		username := registro[1]
-		timestampCreacion := registro[2]
-		estado := registro[4]
-
-		// Buscar el token
-		if tokenCSV != token {
+		if registro[0] != token {
 			continue
 		}
 
-		fmt.Println("Token encontrado en sesiones.csv")
-		fmt.Println("Usuario:", username)
-		fmt.Println("Estado:", estado)
-		fmt.Println("Creacion:", timestampCreacion)
-
-		// Comprobar estado
-		if estado != "ACTIVO" {
-			fmt.Println("Sesion no esta ACTIVA")
+		if registro[4] != "ACTIVO" {
 			return false, ""
 		}
 
-		// Convertir timestamp
 		tiempoCreacion, err := time.ParseInLocation(
 			"2006-01-02 15:04:05",
-			timestampCreacion,
+			registro[2],
 			time.Local,
 		)
 
 		if err != nil {
-			fmt.Println("Error al interpretar timestamp:", err)
 			return false, ""
 		}
 
-		// Calcular antiguedad
-		antiguedad := time.Since(tiempoCreacion)
-
-		fmt.Println("Antiguedad de la sesion:", antiguedad)
-
-		// TTL de 10 minutos
-		if antiguedad > 10*time.Minute {
-
-			fmt.Println("Sesion expirada por TTL")
-
+		if time.Since(tiempoCreacion) >= 10*time.Minute {
 			return false, ""
 		}
 
-		fmt.Println("Sesion valida")
-
-		return true, username
+		return true, registro[1]
 	}
-
-	fmt.Println("Token no encontrado en sesiones.csv")
 
 	return false, ""
 }
 
 func invalidarSesion(token string) error {
+	mutexArchivos.Lock()
+	defer mutexArchivos.Unlock()
 
 	archivo, err := os.Open(archivoSesiones)
-
 	if err != nil {
 		return err
 	}
 
-	defer archivo.Close()
-
 	lector := csv.NewReader(archivo)
 
 	registros, err := lector.ReadAll()
+	archivo.Close()
 
 	if err != nil {
 		return err
@@ -215,7 +180,6 @@ func invalidarSesion(token string) error {
 	encontrado := false
 
 	for i, registro := range registros {
-
 		if i == 0 {
 			continue
 		}
@@ -225,11 +189,8 @@ func invalidarSesion(token string) error {
 		}
 
 		if registro[0] == token {
-
 			registro[4] = "INACTIVO"
-
 			encontrado = true
-
 			break
 		}
 	}
@@ -239,51 +200,92 @@ func invalidarSesion(token string) error {
 	}
 
 	archivoNuevo, err := os.Create(archivoSesiones)
-
 	if err != nil {
 		return err
 	}
-
 	defer archivoNuevo.Close()
 
 	escritor := csv.NewWriter(archivoNuevo)
 
-	err = escritor.WriteAll(registros)
-
-	if err != nil {
+	if err := escritor.WriteAll(registros); err != nil {
 		return err
 	}
 
 	escritor.Flush()
 
-	return nil
+	return escritor.Error()
+}
+
+func guardarMensaje(username string, mensaje string) error {
+	mutexArchivos.Lock()
+	defer mutexArchivos.Unlock()
+
+	archivo, err := os.OpenFile(
+		archivoHistorial,
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+		0644,
+	)
+	if err != nil {
+		return err
+	}
+	defer archivo.Close()
+
+	escritor := csv.NewWriter(archivo)
+
+	registro := []string{
+		time.Now().Format("2006-01-02 15:04:05"),
+		username,
+		mensaje,
+	}
+
+	if err := escritor.Write(registro); err != nil {
+		return err
+	}
+
+	escritor.Flush()
+
+	return escritor.Error()
+}
+
+func enviar(cliente *Cliente, mensaje string) error {
+	cliente.mutex.Lock()
+	defer cliente.mutex.Unlock()
+
+	_, err := cliente.conexion.Write([]byte(mensaje + "\n"))
+
+	return err
 }
 
 func manejarCliente(conexion net.Conn) {
 	defer conexion.Close()
-	fmt.Println("Cliente TCP conectado")
+
 	lector := bufio.NewReader(conexion)
 
 	// LOGIN
 	linea, err := lector.ReadString('\n')
-
 	if err != nil {
-		fmt.Println("Error al recibir LOGIN:", err)
 		return
 	}
 
 	linea = strings.TrimSpace(linea)
-	fmt.Println("Mensaje recibido:", linea)
-	partes := strings.SplitN(linea, " ", 3)
 
-	if len(partes) != 3 || partes[0] != "LOGIN" {
-
+	if !strings.HasPrefix(linea, "LOGIN ") {
 		fmt.Fprintln(conexion, "ERROR INVALID COMMAND")
 		return
 	}
 
-	username := partes[1]
-	password := partes[2]
+	credenciales := strings.TrimPrefix(linea, "LOGIN ")
+
+	// El último espacio separa username de password.
+	posicion := strings.LastIndex(credenciales, " ")
+
+	if posicion <= 0 || posicion == len(credenciales)-1 {
+		fmt.Fprintln(conexion, "ERROR INVALID COMMAND")
+		return
+	}
+
+	username := credenciales[:posicion]
+	password := credenciales[posicion+1:]
 
 	if !verificarCredenciales(username, password) {
 		fmt.Fprintln(conexion, "ERROR INVALID CREDENTIALS")
@@ -291,17 +293,12 @@ func manejarCliente(conexion net.Conn) {
 	}
 
 	token, err := generarToken()
-
 	if err != nil {
-		fmt.Println("Error al generar token:", err)
 		fmt.Fprintln(conexion, "ERROR INTERNAL SERVER")
 		return
 	}
 
-	err = guardarSesion(token, username)
-
-	if err != nil {
-		fmt.Println("Error al guardar sesión:", err)
+	if err := guardarSesion(token, username); err != nil {
 		fmt.Fprintln(conexion, "ERROR INTERNAL SERVER")
 		return
 	}
@@ -317,233 +314,117 @@ func manejarCliente(conexion net.Conn) {
 	mutexClientes.Unlock()
 
 	fmt.Println("Usuario autenticado:", username)
-	fmt.Println("Token:", token)
-	fmt.Println("Puerto UDP:", puertoUDP)
 
-	fmt.Fprintf(
-		conexion,
-		"OK %s %d\n",
-		token,
-		puertoUDP,
-	)
+	if err := enviar(cliente, fmt.Sprintf("OK %s %d", token, puertoUDP)); err != nil {
+		mutexClientes.Lock()
+		delete(clientesActivos, token)
+		mutexClientes.Unlock()
+		return
+	}
 
-	// CONEXIÓN PERMANENTE
 	for {
-		linea, err = lector.ReadString('\n')
+		linea, err := lector.ReadString('\n')
 
 		if err != nil {
-			fmt.Println(
-				"Cliente desconectado:",
-				username,
-			)
-
 			mutexClientes.Lock()
 			delete(clientesActivos, token)
 			mutexClientes.Unlock()
-
 			return
 		}
 
 		linea = strings.TrimSpace(linea)
 
-		fmt.Println(
-			"Mensaje recibido de",
-			username,
-			":",
-			linea,
-		)
-
 		if linea == "LOGOUT" {
-			err := invalidarSesion(token)
-
-			if err != nil {
-				fmt.Println(
-					"Error al invalidar sesion:",
-					err,
-				)
-
-				fmt.Fprintln(
-					conexion,
-					"ERROR INTERNAL SERVER",
-				)
-
-				return
-			}
+			invalidarSesion(token)
 
 			mutexClientes.Lock()
 			delete(clientesActivos, token)
 			mutexClientes.Unlock()
 
-			fmt.Println(
-				"Sesion invalidada:",
-				token,
-			)
-
-			fmt.Fprintln(
-				conexion,
-				"BYE",
-			)
-
+			enviar(cliente, "BYE")
 			return
 		}
 
-		partes = strings.SplitN(linea, " ", 3)
-
-		if len(partes) == 3 && partes[0] == "MSG" {
-			tokenMensaje := partes[1]
-			contenido := partes[2]
-
-			// Validar token
-			if tokenMensaje != token {
-				fmt.Fprintln(
-					conexion,
-					"ERROR INVALID TOKEN",
-				)
-
-				continue
-			}
-
-			// Validar sesión
-			sesionValida, usuarioSesion := validarSesion(tokenMensaje)
-
-			if !sesionValida {
-				fmt.Fprintln(
-					conexion,
-					"ERROR SESSION EXPIRED",
-				)
-
-				continue
-			}
-
-			// Validar usuario-token
-			if usuarioSesion != username {
-				fmt.Fprintln(
-					conexion,
-					"ERROR INVALID TOKEN",
-				)
-
-				continue
-			}
-
-			// Guardar mensaje.
-			err := guardarMensaje(
-				username,
-				contenido,
-			)
-
-			if err != nil {
-				fmt.Println(
-					"Error al guardar mensaje:",
-					err,
-				)
-
-				fmt.Fprintln(
-					conexion,
-					"ERROR INTERNAL SERVER",
-				)
-
-				continue
-			}
-
-			fmt.Println(
-				"Mensaje guardado:",
-				username,
-				"-",
-				contenido,
-			)
-
-			// ACK al remitente
-			fmt.Fprintln(
-				conexion,
-				"ACK",
-			)
-
-			// Mensaje para los demás clientes
-			broadcast := fmt.Sprintf(
-				"INCOMING %s %s\n",
-				username,
-				contenido,
-			)
-
-			mutexClientes.Lock()
-
-			for tokenCliente, cliente := range clientesActivos {
-
-				// No enviar el mensaje
-				// nuevamente al remitente
-				if tokenCliente == token {
-					continue
-				}
-
-				_, err := cliente.conexion.Write(
-					[]byte(broadcast),
-				)
-
-				if err != nil {
-
-					fmt.Println(
-						"Error enviando broadcast a",
-						cliente.username,
-					)
-				}
-			}
-
-			mutexClientes.Unlock()
-
+		if !strings.HasPrefix(linea, "MSG ") {
+			enviar(cliente, "ERROR INVALID COMMAND")
 			continue
 		}
 
-		fmt.Fprintln(conexion, "ERROR INVALID COMMAND")
+		partes := strings.SplitN(linea, " ", 3)
+
+		if len(partes) != 3 || partes[2] == "" {
+			enviar(cliente, "ERROR INVALID COMMAND")
+			continue
+		}
+
+		tokenMensaje := partes[1]
+		contenido := partes[2]
+
+		if tokenMensaje != token {
+			enviar(cliente, "ERROR INVALID TOKEN")
+			continue
+		}
+
+		sesionValida, usuarioSesion := validarSesion(token)
+
+		if !sesionValida {
+			enviar(cliente, "ERROR SESSION EXPIRED")
+			continue
+		}
+
+		if usuarioSesion != username {
+			enviar(cliente, "ERROR INVALID TOKEN")
+			continue
+		}
+
+		if err := guardarMensaje(username, contenido); err != nil {
+			enviar(cliente, "ERROR INTERNAL SERVER")
+			continue
+		}
+
+		// ACK al emisor.
+		enviar(cliente, "ACK")
+
+		// Obtener una copia de los clientes activos.
+		mutexClientes.Lock()
+
+		destinatarios := make([]*Cliente, 0, len(clientesActivos))
+
+		for tokenCliente, clienteActivo := range clientesActivos {
+			if tokenCliente != token {
+				destinatarios = append(destinatarios, clienteActivo)
+			}
+		}
+
+		mutexClientes.Unlock()
+
+		// Broadcast.
+		mensajeBroadcast := fmt.Sprintf(
+			"INCOMING %s %s",
+			username,
+			contenido,
+		)
+
+		for _, destinatario := range destinatarios {
+			if err := enviar(destinatario, mensajeBroadcast); err != nil {
+				fmt.Println(
+					"Error enviando mensaje a",
+					destinatario.username,
+				)
+			}
+		}
 	}
-}
-
-func guardarMensaje(username string, mensaje string) error {
-
-	archivo, err := os.OpenFile(
-		archivoHistorial,
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
-		0644,
-	)
-
-	if err != nil {
-		return err
-	}
-
-	defer archivo.Close()
-
-	escritor := csv.NewWriter(archivo)
-
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-
-	registro := []string{
-		timestamp,
-		username,
-		mensaje,
-	}
-
-	err = escritor.Write(registro)
-
-	escritor.Flush()
-
-	return err
 }
 
 func iniciarServidorTCP() {
-
 	go func() {
-
 		servidor, err := net.Listen(
 			"tcp",
 			"127.0.0.1:9000",
 		)
 
 		if err != nil {
-
-			fmt.Println(
-				"Error al iniciar servidor TCP:",
-				err,
-			)
-
+			fmt.Println("Error al iniciar servidor TCP:", err)
 			return
 		}
 
@@ -554,16 +435,9 @@ func iniciarServidorTCP() {
 		)
 
 		for {
-
 			conexion, err := servidor.Accept()
 
 			if err != nil {
-
-				fmt.Println(
-					"Error al aceptar conexión:",
-					err,
-				)
-
 				continue
 			}
 

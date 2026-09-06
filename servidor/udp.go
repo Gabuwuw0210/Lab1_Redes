@@ -9,30 +9,30 @@ import (
 	"time"
 )
 
+const (
+	formatoFecha = "2006-01-02 15:04:05"
+)
+
 func actualizarHeartbeat(token string) bool {
+	mutexArchivos.Lock()
+	defer mutexArchivos.Unlock()
 
 	archivo, err := os.Open(archivoSesiones)
-
 	if err != nil {
-		fmt.Println("Error al abrir sesiones.csv:", err)
 		return false
 	}
 
-	defer archivo.Close()
-
 	lector := csv.NewReader(archivo)
-
 	registros, err := lector.ReadAll()
+	archivo.Close()
 
 	if err != nil {
-		fmt.Println("Error al leer sesiones.csv:", err)
 		return false
 	}
 
 	encontrado := false
 
 	for i, registro := range registros {
-
 		if i == 0 {
 			continue
 		}
@@ -41,17 +41,17 @@ func actualizarHeartbeat(token string) bool {
 			continue
 		}
 
-		if registro[0] == token {
-
-			if registro[4] != "ACTIVO" {
-				return false
-			}
-
-			registro[3] = time.Now().Format("2006-01-02 15:04:05")
-
-			encontrado = true
-			break
+		if registro[0] != token {
+			continue
 		}
+
+		if registro[4] != "ACTIVO" {
+			return false
+		}
+
+		registro[3] = time.Now().Format(formatoFecha)
+		encontrado = true
+		break
 	}
 
 	if !encontrado {
@@ -59,33 +59,89 @@ func actualizarHeartbeat(token string) bool {
 	}
 
 	archivoNuevo, err := os.Create(archivoSesiones)
-
 	if err != nil {
-		fmt.Println("Error al actualizar sesiones.csv:", err)
 		return false
 	}
 
 	defer archivoNuevo.Close()
-
 	escritor := csv.NewWriter(archivoNuevo)
 
-	err = escritor.WriteAll(registros)
-
-	if err != nil {
-		fmt.Println("Error al escribir sesiones.csv:", err)
+	if err := escritor.WriteAll(registros); err != nil {
 		return false
 	}
 
-	return true
+	escritor.Flush()
+	return escritor.Error() == nil
+}
+
+func marcarSesionInactiva(token string) bool {
+	mutexArchivos.Lock()
+	defer mutexArchivos.Unlock()
+
+	archivo, err := os.Open(archivoSesiones)
+	if err != nil {
+		return false
+	}
+
+	lector := csv.NewReader(archivo)
+	registros, err := lector.ReadAll()
+	archivo.Close()
+
+	if err != nil {
+		return false
+	}
+
+	encontrado := false
+
+	for i, registro := range registros {
+		if i == 0 {
+			continue
+		}
+
+		if len(registro) < 5 {
+			continue
+		}
+
+		if registro[0] != token {
+			continue
+		}
+
+		if registro[4] != "ACTIVO" {
+			return false
+		}
+
+		registro[4] = "INACTIVO"
+		encontrado = true
+		break
+	}
+
+	if !encontrado {
+		return false
+	}
+
+	archivoNuevo, err := os.Create(archivoSesiones)
+	if err != nil {
+		return false
+	}
+	defer archivoNuevo.Close()
+
+	escritor := csv.NewWriter(archivoNuevo)
+
+	if err := escritor.WriteAll(registros); err != nil {
+		return false
+	}
+
+	escritor.Flush()
+
+	return escritor.Error() == nil
 }
 
 func iniciarServidorUDP() {
-
 	go func() {
 
 		direccion := net.UDPAddr{
 			IP:   net.ParseIP("127.0.0.1"),
-			Port: 9001,
+			Port: puertoUDP,
 		}
 
 		servidor, err := net.ListenUDP("udp", &direccion)
@@ -97,12 +153,13 @@ func iniciarServidorUDP() {
 
 		defer servidor.Close()
 
-		fmt.Println("Servidor UDP escuchando en 127.0.0.1:9001")
+		fmt.Println(
+			"Servidor UDP escuchando en 127.0.0.1:9001",
+		)
 
 		buffer := make([]byte, 1024)
 
 		for {
-
 			n, direccionCliente, err := servidor.ReadFromUDP(buffer)
 
 			if err != nil {
@@ -110,13 +167,8 @@ func iniciarServidorUDP() {
 				continue
 			}
 
-			mensaje := strings.TrimSpace(string(buffer[:n]))
-
-			fmt.Println(
-				"Mensaje UDP recibido desde",
-				direccionCliente,
-				":",
-				mensaje,
+			mensaje := strings.TrimSpace(
+				string(buffer[:n]),
 			)
 
 			partes := strings.SplitN(mensaje, " ", 2)
@@ -129,13 +181,14 @@ func iniciarServidorUDP() {
 			token := partes[1]
 
 			if actualizarHeartbeat(token) {
-				fmt.Println(
-					"Heartbeat valido. Sesion actualizada:",
+				fmt.Printf(
+					"HB de %s valido: %s\n",
+					direccionCliente.IP.String(),
 					token,
 				)
 			} else {
 				fmt.Println(
-					"Heartbeat rechazado. Token invalido o sesion inactiva:",
+					"Heartbeat rechazado:",
 					token,
 				)
 			}

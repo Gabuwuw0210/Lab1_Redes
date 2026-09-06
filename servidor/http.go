@@ -115,7 +115,7 @@ func historyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	archivo, err := os.ReadFile("historial.csv")
+	archivo, err := os.ReadFile(archivoHistorial)
 
 	if err != nil {
 

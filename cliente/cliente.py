@@ -56,7 +56,7 @@ def registrar_usuario():
         )
 
 #UDP
-def hilo_heartbeat(token, puerto_udp, detener):
+def hilo_heartbeat(token, puerto_udp, detener_heartbeat, detener_sesion):
     cliente_udp = socket.socket(
         socket.AF_INET,
         socket.SOCK_DGRAM
@@ -65,13 +65,13 @@ def hilo_heartbeat(token, puerto_udp, detener):
     mensaje = f"HEARTBEAT {token}".encode("utf-8")
 
     try:
-        while not detener.is_set():
+        while not detener_heartbeat.is_set() and not detener_sesion.is_set():
             cliente_udp.sendto(
                 mensaje,
                 (HOST, puerto_udp)
             )
 
-            detener.wait(3)
+            detener_heartbeat.wait(3)
 
     finally:
         cliente_udp.close()
@@ -127,8 +127,7 @@ def iniciar_sesion():
         print("Error TCP:", error)
         return
 
-    # El protocolo permite espacios en username,
-    # pero la contraseña no debe contener espacios.
+    # Contraseña no debe contener espacios
     if " " in password:
         print(
             "La contraseña no puede contener espacios "
@@ -162,17 +161,18 @@ def iniciar_sesion():
     token = partes[1]
     puerto_udp = int(partes[2])
 
-    detener = threading.Event()
+    detener_sesion = threading.Event()
+    detener_heartbeat = threading.Event()
 
     hilo_udp = threading.Thread(
         target=hilo_heartbeat,
-        args=(token, puerto_udp, detener),
+        args=(token, puerto_udp, detener_heartbeat, detener_sesion),
         daemon=True
     )
 
     hilo_tcp = threading.Thread(
         target=hilo_receptor,
-        args=(cliente, detener),
+        args=(cliente,detener_sesion),
         daemon=True
     )
 
@@ -183,19 +183,25 @@ def iniciar_sesion():
         "\n¡Sesión iniciada! "
         "Puedes escribir mensajes."
     )
-    print("Escribe LOGOUT para salir.")
+    print("Escribe /LOGOUT para salir.")
+    print("Escribe /STOP_HB para detener el heartbeat.")
 
     try:
-        while not detener.is_set():
+        while not detener_sesion.is_set():
             mensaje = input("> ")
 
-            if detener.is_set():
+            if detener_sesion.is_set():
                 break
 
             if mensaje == "":
                 continue
 
-            if mensaje == "LOGOUT":
+            if mensaje == "/STOP_HB" or mensaje == "/stop_hb":
+                detener_heartbeat.set()
+                print("Heartbeat UDP detenido.")
+                continue
+
+            if mensaje == "/LOGOUT" or mensaje == "/logout":
                 cliente.sendall(
                     b"LOGOUT\n"
                 )
@@ -217,7 +223,8 @@ def iniciar_sesion():
             pass
 
     finally:
-        detener.set()
+        detener_sesion.set()
+        detener_heartbeat.set()
         cliente.close()
 
     print("Sesión cerrada.")

@@ -1,19 +1,46 @@
-# Lab1_Redes
-este readme es para nosotros, para levantar el programa, primero asegura tener py3 y go instalados
+## 1. Integrantes del Grupo
+Catalina Díaz - 202473507-1
 
-0. Explicacion de los csv: `historial` guarda el historial de mensajes, `usuarios` son los perfiles registrados en el sistema, `sesiones` son la lista de tokens de usuario tanto activas como inactivas
+## 2. Instrucciones de Ejecución y Compilación
 
-   Pasos a seguir:
-1. abre 2 powershell donde tengas la carpeta Lab1_Redes descargada
-2. en la powershell 1, prende el servidor escribiendo `go mod init lab1_redes` para crear una wea parecida a un makefile y luego utiliza `go run ./servidor` para correrlo
-3. ahora para la parte del cliente usamos la powershell 2:
+### Puertos por defecto
+*   **Servicio HTTP (Registro):** 8080
+*   **Servicio TCP (Autenticación y Chat):** 9000
+*   **Servicio UDP (Heartbeat):** 9001
 
+### Levantar el Servidor (Go)
+Para compilar y ejecutar el servidor, abra una terminal en el directorio `servidor/` y ejecute:
+1. `go mod init servidor` (Solo la primera vez para inicializar el módulo).
+2. `go run .`
 
-- si quieres REGISTRAR un cliente en usuarios.csv, utiliza `cliente_http.py` escribiendo `python cliente_http.py`
-- si quieres hacer LOGIN para acceder y luego mandar MSG, utiliza `cliente_tcp.py` escribiendo `python cliente_tcp.py`
-- si quieres mandar un heartbeat al servidor, utliza `cliente_udp.py` escribiendo `python cliente_udp.py` (esto actualiza el valor de `timestamp_ultimo_heartbeat` en `sesiones.csv`)
+### Ejecutar el Cliente (Python)
+Abra una nueva terminal en el directorio `cliente/` y ejecute:
+1. `python cliente.py` (o `python3 cliente.py` dependiendo de la configuración de su sistema).
+2. Siga el menú interactivo para registrar un usuario (HTTP) o iniciar sesión (TCP/UDP).
 
-falta hacer el componente 3 y 4
+## 3. Documentación de Protocolos y Comandos
 
----------------------------
-Para hacer el componente 4 junté los clientes que ya estaban hechos en cliente.py, para hacer más simple lo de los hilos. Para correr el servidor es lo mismo de antes, se hace el go mod init y el run. Para los clientes es con `python3 cliente.py`, y si tienes dos terminales clientes se pueden comunicar entre ellas.
+### Protocolo HTTP (Registro)
+*   **Endpoint:** `POST /register`
+*   **Descripción:** Recibe credenciales codificadas (`username` y `password`) y almacena el registro en `usuarios.csv`.
+
+### Protocolo TCP (Autenticación y Mensajería)
+El canal TCP utiliza cadenas de texto delimitadas por un salto de línea (`\n`).
+
+*   **Comando de Login (Cliente -> Servidor):** 
+    `LOGIN <username> <password>\n`
+*   **Respuesta de Login Exitoso (Servidor -> Cliente):** 
+    `OK <token> <puerto_udp>\n`
+*   **Respuesta de Error de Login (Servidor -> Cliente):** 
+    `ERROR INVALID_CREDENTIALS\n`
+*   **Comando de Envío de Mensaje (Cliente -> Servidor):** 
+    `MSG <token> <contenido_del_mensaje>\n`
+*   **Acuse de Recibo (Servidor -> Cliente remitente):** 
+    `ACK\n`
+*   **Retransmisión de Mensaje / Broadcast (Servidor -> Todos los clientes):** 
+    `INCOMING <usuario_emisor> <contenido_del_mensaje>\n`
+
+### Protocolo UDP (Presencia / Heartbeat)
+*   **Comando de Latido (Cliente -> Servidor):** 
+    `HEARTBEAT <token>`
+*   **Descripción:** Se envía un datagrama cada 3 segundos. Si el servidor no recibe este comando en 60 segundos (o en los primeros 30 segundos), la sesión se revoca y se cierra el socket TCP del usuario.

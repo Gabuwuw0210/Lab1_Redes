@@ -1,7 +1,11 @@
-## 1. Integrantes del Grupo
+# Laboratorio 1 Redes de Computadores
+---
 Catalina Díaz - 202473507-1
 
-## 2. Instrucciones de Ejecución y Compilación
+Gabriel Toro - 202204557-4
+
+‼️Se aconseja abrir este README en github para una mejor visibilidad‼️
+## Instrucciones de Ejecución y Compilación
 
 ### Puertos por defecto
 *   **Servicio HTTP (Registro):** 8080
@@ -18,7 +22,27 @@ Abra una nueva terminal en el directorio `cliente/` y ejecute:
 1. `python cliente.py` o `python3 cliente.py`.
 2. Siga el menú interactivo para registrar un usuario (HTTP) o iniciar sesión (TCP/UDP).
 
-## 3. Documentación de Protocolos y Comandos
+## Documentación de Protocolos y Comandos
+
+### Estructura del Proyecto
+```
+/Lab1_Redes-main/
+   ├── cliente/
+   │   └── cliente.py
+   │
+   ├── servidor/
+   │   ├── http.go
+   │   ├── main.go
+   │   ├── tcp.go
+   │   ├── udp.go
+   │   └── watchdog.go
+   │
+   ├── historial.csv
+   ├── sesiones.csv
+   ├── usuarios.csv
+   ├── go.mod
+   └── README.md (El que estas leyendo ahora)
+```
 
 ### Protocolo HTTP (Registro)
 *   **Endpoint:** `POST /register`

@@ -15,7 +15,7 @@ Para compilar y ejecutar el servidor, abra una terminal en el directorio `servid
 
 ### Ejecutar el Cliente (Python)
 Abra una nueva terminal en el directorio `cliente/` y ejecute:
-1. `python cliente.py` (o `python3 cliente.py` dependiendo de la configuración de su sistema).
+1. `python cliente.py` o `python3 cliente.py`.
 2. Siga el menú interactivo para registrar un usuario (HTTP) o iniciar sesión (TCP/UDP).
 
 ## 3. Documentación de Protocolos y Comandos

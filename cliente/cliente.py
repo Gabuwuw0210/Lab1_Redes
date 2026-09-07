@@ -1,34 +1,23 @@
 import socket
 import threading
-import time
 import urllib.request
 import urllib.parse
 import urllib.error
 
 URL = "http://127.0.0.1:8080/register"
-PUERTO_TCP = 9000
 HOST = "127.0.0.1"
+PUERTO_TCP = 9000
 
-def hilo_heartbeat(token, puerto_udp, logout):
-    cliente = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    mensaje = f"HEARTBEAT {token}"
-    try:
-        while not logout.is_set():
-            cliente.sendto(
-                mensaje.encode("utf-8"),
-                (HOST, puerto_udp)
-            )
-            logout.wait(3)
-    except Exception as e:
-        print(f"\nHilo UDP se ha detenido por error: {e}")
-    cliente.close()
-
-
-
+#HTTP
 def registrar_usuario():
     print("\nREGISTRO")
+
     username = input("Username: ")
     password = input("Password: ")
+
+    if " " in password:
+        print("La contraseña no puede contener espacios.")
+        return
 
     datos = {
         "username": username,
@@ -50,6 +39,7 @@ def registrar_usuario():
 
     try:
         respuesta = urllib.request.urlopen(solicitud)
+
         print("Registro exitoso")
         print("Codigo HTTP:", respuesta.status)
         print("Respuesta:", respuesta.read().decode("utf-8"))
@@ -60,23 +50,177 @@ def registrar_usuario():
         print("Respuesta:", error.read().decode("utf-8"))
 
     except urllib.error.URLError as error:
-        print("No se pudo conectar con el servidor:", error.reason)
+        print(
+            "No se pudo conectar con el servidor:",
+            error.reason
+        )
 
-def hilo_receptor(cliente):
-    while True:
-        try:
-            respuesta=cliente.recv(1024).decode("utf-8")
-            if not respuesta:
-                print("\n[Desconectado del servidor]")
+#UDP
+def hilo_heartbeat(token, puerto_udp, detener):
+    cliente_udp = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_DGRAM
+    )
+
+    mensaje = f"HEARTBEAT {token}".encode("utf-8")
+
+    try:
+        while not detener.is_set():
+            cliente_udp.sendto(
+                mensaje,
+                (HOST, puerto_udp)
+            )
+
+            detener.wait(3)
+
+    finally:
+        cliente_udp.close()
+
+#TCP
+def hilo_receptor(cliente, detener):
+    lector = cliente.makefile(
+        "r",
+        encoding="utf-8"
+    )
+
+    try:
+        while not detener.is_set():
+            linea = lector.readline()
+
+            if not linea:
+                print("\n[Servidor desconectado]")
+                detener.set()
                 break
-            mensaje=respuesta.strip()
-            if mensaje in ["ACK", "BYE"]:
+
+            linea = linea.rstrip("\n")
+
+            if linea == "ACK":
                 continue
-            print(f"\n{mensaje}")
+
+            if linea == "BYE":
+                detener.set()
+                break
+
+            print(f"\n{linea}")
             print("> ", end="", flush=True)
-                
-        except Exception:
-            break
+
+    except OSError:
+        pass
+
+    finally:
+        lector.close()
+
+def iniciar_sesion():
+    username = input("Username: ")
+    password = input("Password: ")
+
+    cliente = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_STREAM
+    )
+
+    try:
+        cliente.connect(
+            (HOST, PUERTO_TCP)
+        )
+    except OSError as error:
+        print("Error TCP:", error)
+        return
+
+    # El protocolo permite espacios en username,
+    # pero la contraseña no debe contener espacios.
+    if " " in password:
+        print(
+            "La contraseña no puede contener espacios "
+            "con el protocolo actual."
+        )
+        cliente.close()
+        return
+
+    mensaje = f"LOGIN {username} {password}\n"
+
+    try:
+        cliente.sendall(
+            mensaje.encode("utf-8")
+        )
+
+        respuesta = cliente.recv(1024).decode("utf-8").strip()
+
+    except OSError as error:
+        print("Error de comunicación:", error)
+        cliente.close()
+        return
+
+    print("Respuesta del servidor:", respuesta)
+
+    partes = respuesta.split()
+
+    if len(partes) != 3 or partes[0] != "OK":
+        cliente.close()
+        return
+
+    token = partes[1]
+    puerto_udp = int(partes[2])
+
+    detener = threading.Event()
+
+    hilo_udp = threading.Thread(
+        target=hilo_heartbeat,
+        args=(token, puerto_udp, detener),
+        daemon=True
+    )
+
+    hilo_tcp = threading.Thread(
+        target=hilo_receptor,
+        args=(cliente, detener),
+        daemon=True
+    )
+
+    hilo_udp.start()
+    hilo_tcp.start()
+
+    print(
+        "\n¡Sesión iniciada! "
+        "Puedes escribir mensajes."
+    )
+    print("Escribe LOGOUT para salir.")
+
+    try:
+        while not detener.is_set():
+            mensaje = input("> ")
+
+            if detener.is_set():
+                break
+
+            if mensaje == "":
+                continue
+
+            if mensaje == "LOGOUT":
+                cliente.sendall(
+                    b"LOGOUT\n"
+                )
+                break
+
+            comando = f"MSG {token} {mensaje}\n"
+
+            try:
+                cliente.sendall(
+                    comando.encode("utf-8")
+                )
+            except OSError:
+                break
+
+    except (EOFError, KeyboardInterrupt):
+        try:
+            cliente.sendall(b"LOGOUT\n")
+        except OSError:
+            pass
+
+    finally:
+        detener.set()
+        cliente.close()
+
+    print("Sesión cerrada.")
 
 def main():
     while True:
@@ -84,63 +228,24 @@ def main():
         print("1. Registrar nuevo usuario")
         print("2. Iniciar sesión")
         print("3. Salir")
-        opcion=input("Elige una opción del 1 al 3: ")
-        if opcion=="1":
+
+        opcion = input(
+            "Elige una opción del 1 al 3: "
+        )
+
+        if opcion == "1":
             registrar_usuario()
-        elif opcion=="2":
-            username = input("Username: ")
-            password = input("Password: ")
 
-            cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        elif opcion == "2":
+            iniciar_sesion()
 
-            try:
-                cliente.connect(("127.0.0.1", 9000))
-            except Exception as e:
-                print("Error TCP: ", e)
-                continue
-
-            mensaje = f"LOGIN {username} {password}\n"
-            cliente.sendall(mensaje.encode("utf-8"))
-
-            respuesta = cliente.recv(1024).decode("utf-8").strip()
-            print("Respuesta del servidor:", respuesta)
-            partes=respuesta.split(" ")
-
-            if partes[0]=="OK":
-                token=partes[1]
-                puerto_udp=int(partes[2])
-
-                logout=threading.Event()
-                threading.Thread(target=hilo_heartbeat, args=(token, puerto_udp,logout), daemon=True).start()
-                threading.Thread(target=hilo_receptor, args=(cliente,), daemon=True).start()
-                
-                print("\n¡Sesión iniciada! Puedes escribir mensajes. Escribe LOGOUT para salir.")
-
-
-                while True:
-
-                    mensaje = input("> ")
-                    if mensaje == "LOGOUT":
-                        cliente.sendall(b"LOGOUT\n")
-                        logout.set()
-                        break
-
-                    comando = f"MSG {token} {mensaje}\n"
-                    try:
-                        cliente.sendall(comando.encode("utf-8"))
-                    except Exception:
-                        break
-                cliente.close()
-                print("Sesión cerrada.")
-            else:
-                cliente.close()
-
-        elif opcion=="3":
+        elif opcion == "3":
             break
+
         else:
-            print("Opción no reconocida. Por favor, ingrese opción del 1 al 3: ")
-
-
+            print(
+                "Opción no reconocida."
+            )
 
 if __name__ == "__main__":
     main()
